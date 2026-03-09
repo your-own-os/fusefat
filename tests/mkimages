@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+#
+# Create FAT filesystem images in the current directory: fat12.img (2MB), fat16.img (16MB), and fat32.img (128MB).
+# Usage: mkimages [--dir OUTPUT_DIR]
+#
+
+import argparse
+import os
+import subprocess
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Create FAT filesystem images")
+    parser.add_argument("--dir", default=".", help="Output directory for images")
+    parser.add_argument("--fat-type", help="FAT type to create (12, 16, or 32), defaults to all 3 types")
+    args = parser.parse_args()
+
+    output_dir = args.dir
+    os.makedirs(output_dir, exist_ok=True)
+
+    images = [
+        ("fat12", 2, "fat12.img", ["-F", "12"]),
+        ("fat16", 16, "fat16.img", ["-F", "16"]),
+        ("fat32", 128, "fat32.img", ["-F", "32", "-R", "2", "-s", "1"]),
+    ]
+
+    if args.fat_type:
+        images = [(ft, sz, nm, ag) for ft, sz, nm, ag in images if ft == args.fat_type]
+
+    for fat_type, size_mb, output_path, extra_args in images:
+        full_path = os.path.join(output_dir, output_path)
+        with open(full_path, "wb") as f:
+            for i in range(size_mb):
+                f.write(b"\x00" * (1024 * 1024))
+
+        cmd = ["mkfs.fat"] + extra_args + [full_path]
+        subprocess.run(cmd, check=True, capture_output=True)
+        print(f"Created {full_path} ({size_mb}MB)")
+
+
+if __name__ == "__main__":
+    main()
