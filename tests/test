@@ -1,0 +1,103 @@
+#!/usr/bin/env python3
+#
+# Test runner for fusefat.
+#
+# Usage:
+#     ./test                                # Run all tests (vfat backend)
+#     ./test test_append_to_file            # Run specific test function (test_append_to_file is a function name, not file or directory)
+#     ./test --backend=fusefat              # Run with fusefat backend
+#
+
+import os
+import re
+import sys
+import glob
+import pathlib
+import subprocess
+
+
+def die(msg):
+    print(msg, file=sys.stderr)
+    sys.exit(1)
+
+
+def check_duplicate_test_functions():
+    test_functions = {}
+    duplicates = []
+    
+    test_files = glob.glob("testcases/**/*.py", recursive=True)
+    
+    for filepath in test_files:
+        if filepath.endswith("__init__.py"):
+            continue
+        with open(filepath, "r") as f:
+            content = f.read()
+            # Find all test function definitions
+            matches = re.findall(r"^\s+def\s+(test_\w+)\s*\(", content, re.MULTILINE)
+            for func_name in matches:
+                if func_name in test_functions:
+                    duplicates.append((func_name, test_functions[func_name], filepath))
+                else:
+                    test_functions[func_name] = filepath
+    
+    if duplicates:
+        print("ERROR: Duplicate test function names found:")
+        for func_name, file1, file2 in duplicates:
+            print(f"  {func_name} in {file1} and {file2}")
+        sys.exit(1)
+
+
+# for example: "test_append_to_file" -> "testcases/common/test_append_to_file.py::TestAppendToFile::test_append_to_file"
+def find_test_function(func_name):
+    test_files = glob.glob("testcases/**/*.py", recursive=True)
+    
+    for filepath in test_files:
+        if filepath.endswith("__init__.py"):
+            continue
+        content = pathlib.Path(filepath).read_text()
+        # Check if function exists in this file (inside a class)
+        pattern = rf"^\s+def\s+{func_name}\s*\("
+        if re.search(pattern, content, re.MULTILINE):
+            # Extract class name
+            class_match = re.search(rf"class\s+(\w+):.*?def\s+{func_name}\s*\(", content, re.DOTALL)
+            if class_match:
+                class_name = class_match.group(1)
+                return f"{filepath}::{class_name}::{func_name}"
+    
+    return None
+
+
+def main():
+    args = sys.argv[1:]
+    
+    # Check for duplicates before running tests
+    check_duplicate_test_functions()
+    
+    # Check for --backend option
+    backend = "debug"
+    backend_args = [a for a in args if a.startswith("--backend=")]
+    if backend_args:
+        backend = backend_args[0].split("=")[1]
+        args.remove(backend_args[0])
+    
+    # Determine which tests to run
+    full_test_func_name = "testcases"
+    if len(args) > 0:
+        if not args[0].startswith("test_"):
+            die(f"ERROR: Test function '{args[0]}' not found")
+        full_test_func_name = find_test_function(args[0])
+        if full_test_func_name is None:
+            die(f"ERROR: Test function '{args[0]}' not found")
+    
+    # Run pytest
+    cmd = [sys.executable, "-m", "pytest", "-v", "-p", "no:cacheprovider", f"--backend={backend}", full_test_func_name]
+    cmd.extend(args[1:])
+    
+    envDict = os.environ.copy()
+    envDict["PYTHONDONTWRITEBYTECODE"] = "1"
+    result = subprocess.run(cmd, env=envDict)
+    sys.exit(result.returncode)
+
+
+if __name__ == "__main__":
+    main()

@@ -1,0 +1,1 @@
+When `rust-fatfs` 0.4 is released on crates.io, replace the current dependency, because there's 2 warnings that related to it.
